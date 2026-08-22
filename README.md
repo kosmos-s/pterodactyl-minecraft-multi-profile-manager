@@ -1,104 +1,110 @@
-# Pterodactyl Minecraft Multi-Profile Manager
+# Pterodactyl Minecraft Multi-Profile Manager v2.2.0
 
 > 한국어 문서: https://github.com/kosmos-s/pterodactyl-minecraft-multi-profile-manager-ko
 
-Run many independent Minecraft server folders from **one Pterodactyl server and one allocation**, while only starting one profile at a time.
+Store multiple independent Minecraft server folders inside **one Pterodactyl server with one Primary Allocation**, and run exactly one profile at a time.
 
-This project is designed for home servers and small private hosts that keep multiple Minecraft worlds/modpacks but do not want to reserve a separate Pterodactyl allocation for every stored server.
+This is aimed at home servers and small private hosts that keep many worlds, modpacks, test servers, or archived servers without wanting a separate Pterodactyl allocation for every stored instance.
 
 > Not affiliated with or endorsed by Pterodactyl Software.
 
-## Why this exists
+## Features
 
-A normal Pterodactyl server requires a primary allocation even while the server is stopped. If you keep many old worlds, modpacks, test servers, and friend servers as separate Pterodactyl servers, the allocation list grows with them.
+- One Pterodactyl server + one Primary Allocation
+- Multiple independent Minecraft server folders under `/home/container/servers/`
+- Unicode profile names, including Korean
+- Automatic `profile.conf` creation
+- Common server-family detection for Paper, Purpur, Folia, Spigot, Vanilla, Fabric, Quilt, Forge, NeoForge, and more
+- Minecraft version detection using `logs/latest.log`, `versions/`, jar names and common layouts
+- Automatic Java 8 / 11 / 16 / 17 / 21 / 25 selection and caching
+- Correct Pterodactyl `Memory=0` (Unlimited) handling
+- Per-profile configuration overrides
+- Automatic backup of the previously active profile when switching
+- Backup retention with `BACKUP_KEEP`
+- Primary Allocation port automatically applied to `server.properties`
+- Conservative validation: ambiguous or invalid profiles stop instead of guessing
 
-This project instead stores them as profiles inside one Pterodactyl server:
+## Layout
 
 ```text
 /home/container/
 ├─ servers/
+│  ├─ default/
 │  ├─ survival/
 │  ├─ modded/
-│  ├─ hardcore/
-│  └─ friends/
+│  └─ old-server/
 ├─ profile-backups/
-└─ .multijava/
+├─ .multijava/
+├─ .multi-profile-state/
+└─ profile-launcher.sh
 ```
-
-Only the selected profile runs, and every profile uses the same Pterodactyl primary allocation.
-
-## Features
-
-- One Pterodactyl server, one primary allocation
-- Multiple independent Minecraft server folders
-- `profile.conf` generated automatically when missing
-- Server type auto-detection
-- Minecraft version detection where possible
-- Automatic Java runtime selection
-- Per-profile configuration overrides
-- Safe handling of invalid or missing profiles
-- Per-profile backups when switching
-- Primary allocation port automatically applied to `server.properties`
-- Optional dynamic `SERVER_PROFILE` dropdown in the Pterodactyl Startup page
-
-## Supported server layouts
-
-The launcher is intended to work with common layouts including:
-
-- Paper
-- Purpur
-- Folia
-- Spigot
-- Vanilla
-- Fabric
-- Quilt
-- Forge
-- NeoForge
-- Mohist
-- Magma
-- Arclight
-
-Auto-detection is intentionally conservative. If the launcher cannot determine a Minecraft or Java version safely, it stops and asks you to set the value in `profile.conf` instead of guessing.
 
 ## Installation
 
-### 1. Import the Egg
+1. Import `egg/egg-minecraft-multi-profile-manager-v2.2.0.json` into a Minecraft Nest in the Pterodactyl admin panel.
+2. Create a new server using this Egg.
+3. Assign one Primary Allocation, for example `25565`.
+4. Set `ACCEPT_EULA=true` only if you accept the Minecraft EULA.
+5. Start the server.
 
-Import:
+## Switching profiles
 
-```text
-egg/egg-minecraft-multi-profile-manager-v2.1.json
-```
-
-from the Pterodactyl admin panel under your Minecraft nest.
-
-Create one server using the Egg and assign a single primary allocation, for example `25565`.
-
-Set `ACCEPT_EULA=true` only if you accept the Minecraft EULA.
-
-### 2. Add profiles
-
-Place each existing Minecraft server inside its own directory:
+The normal workflow is intentionally simple:
 
 ```text
-/home/container/servers/
-├─ survival/
-│  ├─ server.jar
-│  ├─ server.properties
-│  ├─ world/
-│  └─ plugins/
-└─ modded/
-   ├─ run.sh
-   ├─ libraries/
-   ├─ mods/
-   └─ world/
+Stop server
+→ Startup
+→ change SERVER_PROFILE
+→ Start server
 ```
 
-Then select the folder name as `SERVER_PROFILE` and start the Pterodactyl server.
+Example:
+
+```text
+SERVER_PROFILE=survival
+```
+
+runs:
+
+```text
+/home/container/servers/survival/
+```
+
+Profile names may contain Unicode letters/numbers plus `.`, `_`, and `-`. Spaces and path-like values such as `/`, `\\`, and `..` are rejected for safety.
+
+## Importing an existing server
+
+Place the complete existing server inside a profile folder:
+
+```text
+servers/survival/
+├─ server.jar
+├─ server.properties
+├─ logs/
+├─ plugins/
+├─ world/
+└─ ...
+```
+
+If `profile.conf` does not exist, the manager creates it automatically on first launch.
+
+Imported servers are intentionally handled conservatively. Even if the jar has been renamed to `server.jar`, an existing `logs/latest.log` such as:
+
+```text
+Loading Paper 1.21.11-69-... for Minecraft 1.21.11
+```
+
+can be used to detect:
+
+```text
+Server type      : paper
+Minecraft version: 1.21.11
+Java             : 21
+```
+
+If detection is not reliable, set the version manually in `profile.conf` rather than letting the launcher guess.
 
 ## `profile.conf`
-
-If a profile does not contain `profile.conf`, the manager creates one automatically.
 
 Example:
 
@@ -118,132 +124,126 @@ BACKUP_KEEP=5
 BACKUP_EXCLUDE_LOGS=true
 ```
 
-Normally the `auto` values can be left unchanged. Override only what cannot be detected reliably.
+Normally the `auto` values can stay unchanged. Override only values that cannot be detected safely.
+
+Example:
+
+```ini
+MINECRAFT_VERSION=1.21.11
+JAVA_VERSION=auto
+```
 
 ## Automatic Java selection
 
-The manager can select a Java runtime based on the detected or configured Minecraft version. Supported runtime slots include Java 8, 11, 16, 17, 21, and 25.
+The Egg uses the Pterodactyl Java 25 Yolks image as its base, but a profile may require another Java version.
 
-Downloaded runtimes are stored under:
+The manager can select and cache Java 8, 11, 16, 17, 21, or 25 under:
 
 ```text
 /home/container/.multijava/
 ```
 
-and reused on later starts.
-
-If the required Java version cannot be determined safely, startup stops instead of guessing. Set `MINECRAFT_VERSION` or `JAVA_VERSION` in that profile's `profile.conf` to resolve it.
-
-## Profile switching and backups
-
-When you change `SERVER_PROFILE`, the manager can back up the previously active profile before starting the new one.
-
-Backups are stored per profile:
+Example:
 
 ```text
-/home/container/profile-backups/
-├─ survival/
-├─ modded/
-└─ hardcore/
+Minecraft 1.21.11 → Java 21
+Minecraft 26.2    → Java 25
 ```
 
-These are profile-level `.tar.gz` archives and are separate from Pterodactyl's built-in Backups tab.
+Cached runtimes are reused on later starts.
 
-## Dynamic Startup dropdown (optional)
+## Memory behavior
 
-The `panel-patch/` directory contains an optional Pterodactyl Panel frontend patch.
+Pterodactyl uses `Memory=0` to mean Unlimited.
 
-Instead of typing:
+v2.2.0 handles that correctly:
 
 ```text
-SERVER_PROFILE=survival
+Memory=0
+→ Xms=128M
+→ Xmx=JVM auto
 ```
 
-it reads `/servers` using Pterodactyl's existing file-list API and renders the available directories as a dropdown in Startup.
+With an explicit 4096 MB limit and the default `MEMORY_PERCENT=95`:
+
+```text
+Memory=4096
+→ Xmx≈3891M
+```
+
+For production use, an explicit Pterodactyl memory limit is recommended so one Minecraft profile cannot consume memory needed by other services on the host.
+
+## Profile-switch backups
+
+When switching profiles, the previously active profile can be archived automatically.
 
 Example:
 
 ```text
-/servers/
-├─ survival/
-├─ modded/
-├─ hardcore/
-└─ friends/
+mcs → default
 ```
 
-becomes:
+creates a backup similar to:
 
 ```text
-SERVER_PROFILE
-[ survival ▼ ]
-
-survival
-modded
-hardcore
-friends
+/home/container/profile-backups/mcs/
+└─ mcs-YYYYMMDD-HHMMSS-1-switch.tar.gz
 ```
 
-The list refreshes when the Startup page loads and when the dropdown is focused.
+`BACKUP_KEEP=5` keeps the latest five backups per profile.
 
-### Install the Panel patch
+These are filesystem `.tar.gz` archives and are separate from Pterodactyl's built-in Backups tab.
 
-On the machine hosting the Pterodactyl Panel:
+## Large file uploads: SFTP + WinSCP
 
-```bash
-cd panel-patch
-sudo bash install.sh /var/www/pterodactyl
+Pterodactyl's web File Manager may have a 100 MB upload limit depending on the installation.
 
-cd /var/www/pterodactyl
-yarn build:production
-```
-
-Then hard-refresh the browser.
-
-The patch only changes the Panel frontend. It does not modify Wings or add a new backend API.
-
-> Pterodactyl Panel updates can overwrite frontend source changes. Re-apply the patch after an update if the dropdown disappears.
-
-## Port behavior
-
-Every selected profile is forced to use the current Pterodactyl primary allocation.
-
-For a primary allocation of `25565`, the manager updates the selected profile's `server.properties` to use that port before launch.
-
-This means you can keep one external forwarding rule such as:
+For large worlds, server archives, and backups, the recommended Windows workflow is:
 
 ```text
-WAN :25565 → Pterodactyl node :25565
+Pterodactyl server
+→ Settings
+→ SFTP Details
+→ Launch SFTP
+→ WinSCP
 ```
 
-while storing many server profiles behind it.
+WinSCP is convenient because it can register itself for `sftp://` links, allowing Pterodactyl's **Launch SFTP** button to open the server directly.
+
+PowerShell `sftp` and `scp` also work if you prefer command-line tools.
 
 ## Important limitations
 
-- Only one profile can run at a time.
-- All profiles share the resource limits of the single Pterodactyl server.
+- Only one profile is intended to run at a time.
+- All profiles share the same Pterodactyl server resource limits.
 - Auto-detection cannot identify every custom or heavily modified server layout.
-- The dynamic dropdown requires a Pterodactyl Panel source modification and frontend rebuild.
-- Profile backups are filesystem archives, not Pterodactyl-native backup records.
-- Always keep separate backups of important worlds before testing server or Java version changes.
+- Profile backups are separate from Pterodactyl-native backup records.
+- Keep independent backups of important worlds before testing server, mod, or Java version changes.
 
-## Project structure
+## Tested in a real Pterodactyl environment
 
-```text
-.
-├─ egg/
-│  └─ egg-minecraft-multi-profile-manager-v2.1.json
-├─ panel-patch/
-│  ├─ DynamicProfileSelect.tsx
-│  ├─ install.sh
-│  ├─ patch_variablebox.py
-│  └─ uninstall.sh
-├─ docs/
-│  └─ MIGRATION-v1-to-v2.md
-├─ CONTRIBUTING.md
-├─ LICENSE
-├─ README.md
-└─ SECURITY.md
-```
+The v2.2.0 release was tested with:
+
+- clean Egg startup
+- `Memory=0` Unlimited handling
+- Unicode/Korean profile names
+- automatic `profile.conf` creation
+- imported Paper server detection from `latest.log`
+- Java 21 ↔ Java 25 automatic switching
+- Primary Allocation port enforcement
+- profile-switch backups and `BACKUP_KEEP`
+- invalid/missing profile rejection
+- real Minecraft client connections and profile round-trips
+
+## AI assistance disclosure
+
+This project was developed with assistance from OpenAI ChatGPT for design discussions, implementation, debugging, documentation, and release preparation. Final feature decisions, real Pterodactyl testing, distribution, and repository management are handled by the repository owner.
+
+See [AI_ASSISTANCE.md](AI_ASSISTANCE.md) for additional details.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
