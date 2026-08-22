@@ -1,5 +1,7 @@
 # Pterodactyl Minecraft Multi-Profile Manager
 
+> 한국어 문서: https://github.com/kosmos-s/pterodactyl-minecraft-multi-profile-manager-ko
+
 Run many independent Minecraft server folders from **one Pterodactyl server and one allocation**, while only starting one profile at a time.
 
 This project is designed for home servers and small private hosts that keep multiple Minecraft worlds/modpacks but do not want to reserve a separate Pterodactyl allocation for every stored server.
